@@ -1,0 +1,22 @@
+cabal-version:       >=1.10
+name:                dhall-bot
+version:             0.1.0.0
+synopsis:            A small IRC bot for the Dhall language
+description:         'dhall-bot' is an IRC bot controlling a custom Dhall REPL
+homepage:            https://github.com/basile-henry/dhall-bot
+license:             MIT
+license-file:        LICENSE
+author:              Basile Henry
+maintainer:          bjm.henry@gmail.com
+copyright:           Copyright (c) 2019 Basile Henry
+category:            Web
+build-type:          Simple
+
+executable dhall-bot
+  main-is:             Main.hs
+  build-depends:       base  >=4.12 && <5.0
+                     , dhall >=1.20 && <2.0
+                     , mtl
+                     , network-simple
+                     , text
+  default-language:    Haskell2010
