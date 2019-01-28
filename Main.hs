@@ -1,5 +1,6 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
@@ -29,8 +30,8 @@ import           Network.Simple.TCP                    (Socket)
 import qualified Network.Simple.TCP                    as Network
 
 -- mtl
+import           Control.Monad.Except
 import           Control.Monad.Reader
-import qualified Control.Monad.Trans.State.Strict      as State
 
 -- prettyprinter
 import qualified Data.Text.Prettyprint.Doc             as Pretty
@@ -41,6 +42,10 @@ import           Data.Text                             (Text)
 import qualified Data.Text                             as Text
 import qualified Data.Text.Encoding                    as Text
 import qualified Data.Text.IO                          as Text
+
+-- transformers
+import qualified Control.Monad.Trans.State.Strict      as State
+
 
 server = "irc.freenode.org"
 port   = "6667"
@@ -121,23 +126,24 @@ write command params = do
 -----------
 
 eval
-  :: MonadIO m
+  :: forall m . MonadIO m
   => Bool -> Text -> m Text
-eval showType src =
-  case Dhall.exprFromText "(stdin)" src of
-    Left  err    -> pure . Text.pack $ show err
+eval showType src = fmap (either id id) . runExceptT $ do
+  let withErr :: Show e => Either e a -> ExceptT Text m a
+      withErr = liftEither . first (Text.pack . show)
 
-    Right parsed -> do
+  parsed <-
+    withErr $ Dhall.exprFromText "(stdin)" src
 
-      let status = Dhall.emptyStatus "."
-      loaded <- liftIO $ State.evalStateT (Dhall.loadWith parsed) status
+  loaded <- withErr =<< liftIO
+    (catch
+      (Right <$> State.evalStateT (Dhall.loadWith parsed) (Dhall.emptyStatus "."))
+      (\(e :: Dhall.MissingImports) -> pure $ Left e))
 
-      pure $
-        case Dhall.typeOf loaded of
-          Left  err   -> Text.pack $ show err
+  type' <-
+    withErr $ Dhall.typeOf loaded
 
-          Right type' -> output . Dhall.normalize $
-            if showType then type' else loaded
+  pure . output . Dhall.normalize $ if showType then type' else loaded
 
 output :: Pretty.Pretty a => Dhall.Expr s a -> Text
 output expr =
