@@ -1,18 +1,14 @@
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Main where
 
 -- base
-import           Control.Arrow
 import           Control.Exception
+import           Data.Bifunctor
 import           Data.List
 import           System.Exit
 import           System.IO
-
--- prettyprinter
-import qualified Data.Text.Prettyprint.Doc             as Pretty
-import qualified Data.Text.Prettyprint.Doc.Render.Text as Pretty
 
 -- dhall
 import qualified Dhall
@@ -36,9 +32,13 @@ import qualified Network.Simple.TCP                    as Network
 import           Control.Monad.Reader
 import qualified Control.Monad.Trans.State.Strict      as State
 
+-- prettyprinter
+import qualified Data.Text.Prettyprint.Doc             as Pretty
+import qualified Data.Text.Prettyprint.Doc.Render.Text as Pretty
+
 -- text
-import qualified Data.Text                             as Text
 import           Data.Text                             (Text)
+import qualified Data.Text                             as Text
 import qualified Data.Text.Encoding                    as Text
 import qualified Data.Text.IO                          as Text
 
@@ -68,31 +68,42 @@ listen :: Net ()
 listen = do
   socket <- ask
   forever $ do
-    Just rawLine <- liftIO (Network.recv socket 512) -- IRC lines limited to 512 bytes
-    let ircLine =  Text.decodeUtf8 rawLine
-        command:params = Text.splitOn " :" ircLine
-        param = Text.concat params
+    mRawLine <- liftIO (Network.recv socket 512) -- IRC lines limited to 512 bytes
+    case mRawLine of
+      Just rawLine -> do
+        let ircLine =  Text.decodeUtf8 rawLine
+            command:params = Text.splitOn " :" ircLine
+            param = Text.concat params
 
-    if "PING " == command
-      then write "PONG" $ " :" <> param
-      else do
-        liftIO $ Text.putStr ircLine
-        evalIrc param
+        if "PING " == command
+          then write "PONG" $ " :" <> param
+          else do
+            liftIO $ Text.putStr ircLine
+            evalIrc param
+      Nothing -> pure ()
 
 -- Dispatch a command
-evalIrc :: Text -> Net ()
+evalIrc
+  :: ( MonadIO m, MonadReader Socket m )
+  => Text -> m ()
 evalIrc x
-  | "!id " `Text.isPrefixOf` x
-  = privmsg (Text.drop 4 x)
+  -- eval dhall
   | ">" `Text.isPrefixOf` x
-  = eval $ Text.drop 1 x
+  = privmsg =<< eval False (Text.drop 1 x)
+
+  -- type dhall
+  |  ":type " `Text.isPrefixOf` x
+  = privmsg =<< eval True (Text.drop 6 x)
+  | ":t " `Text.isPrefixOf` x
+  = privmsg =<< eval True (Text.drop 3 x)
+
 evalIrc _ = pure () -- ignore everything else
 
 -- Send a privmsg to the current chan + server
 privmsg
   :: ( MonadIO m, MonadReader Socket m )
   => Text -> m ()
-privmsg msg = write "PRIVMSG" (chan <> " :" <> msg)
+privmsg msg = mapM_ (\m -> write "PRIVMSG" (chan <> " :" <> m)) $ Text.lines msg
 
 -- Send a message out to the server we're currently connected to
 write
@@ -109,53 +120,30 @@ write command params = do
 -- Dhall
 -----------
 
-parseAndLoad
-  :: ( MonadIO m )
-  => Text -> m ( Dhall.Expr Dhall.Src Dhall.X )
-parseAndLoad src = do
-
-  parsed <-
-    case Dhall.exprFromText "(stdin)" src of
-      Left e ->
-        liftIO ( throwIO e )
-
-      Right a ->
-        return a
-
-  let status = Dhall.emptyStatus "."
-
-  liftIO ( State.evalStateT (Dhall.loadWith parsed) status )
-
-typeCheck
-  :: ( MonadIO m )
-  => Dhall.Expr Dhall.Src Dhall.X -> m ( Dhall.Expr Dhall.Src Dhall.X )
-typeCheck expression =
-  case Dhall.typeOf expression of
-    Left  e -> liftIO ( throwIO e )
-    Right a -> return a
-
 eval
-  :: ( MonadIO m, MonadReader Socket m )
-  => Text -> m ()
-eval src = do
-  loaded <-
-    parseAndLoad src
+  :: MonadIO m
+  => Bool -> Text -> m Text
+eval showType src =
+  case Dhall.exprFromText "(stdin)" src of
+    Left  err    -> pure . Text.pack $ show err
 
-  exprType <-
-    typeCheck loaded
+    Right parsed -> do
 
-  let expr = Dhall.normalize loaded
+      let status = Dhall.emptyStatus "."
+      loaded <- liftIO $ State.evalStateT (Dhall.loadWith parsed) status
 
-  output expr
+      pure $
+        case Dhall.typeOf loaded of
+          Left  err   -> Text.pack $ show err
 
-output
-    :: (Pretty.Pretty a, MonadIO m, MonadReader Socket m)
-    => Dhall.Expr s a -> m ()
-output expr = do
+          Right type' -> output . Dhall.normalize $
+            if showType then type' else loaded
 
+output :: Pretty.Pretty a => Dhall.Expr s a -> Text
+output expr =
   let stream =
         Pretty.unAnnotateS $
           Pretty.layoutSmart Dhall.Pretty.layoutOpts $
               Dhall.Pretty.prettyCharacterSet Dhall.Pretty.Unicode expr
 
-  privmsg $ Pretty.renderStrict stream
+  in  Pretty.renderStrict stream
