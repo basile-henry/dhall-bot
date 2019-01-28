@@ -80,8 +80,8 @@ listen = do
             command:params = Text.splitOn " :" ircLine
             param = Text.concat params
 
-        if "PING " == command
-          then write "PONG" $ " :" <> param
+        if "PING" == command
+          then write "PONG" $ ":" <> param
           else do
             liftIO $ Text.putStr ircLine
             evalIrc param
@@ -101,6 +101,15 @@ evalIrc x
   = privmsg =<< eval True (Text.drop 6 x)
   | ":t " `Text.isPrefixOf` x
   = privmsg =<< eval True (Text.drop 3 x)
+
+  -- help
+  |  ":help" `Text.isPrefixOf` x
+  || ":h" `Text.isPrefixOf` x
+  = privmsg "I understand the following commands: about help type >"
+
+  -- help
+  | ":about" `Text.isPrefixOf` x
+  = privmsg "The source for the dhall-bot project is available at https://github.com/basile-henry/dhall-bot"
 
 evalIrc _ = pure () -- ignore everything else
 
