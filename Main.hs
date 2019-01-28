@@ -7,20 +7,10 @@ module Main where
 -- base
 import           Control.Exception
 import           Data.Bifunctor
-import           Data.List
-import           System.Exit
-import           System.IO
 
 -- dhall
-import qualified Dhall
-import qualified Dhall.Binary
-import qualified Dhall.Context
-import qualified Dhall.Core
-import qualified Dhall.Core                            as Dhall (Expr, Var (V),
-                                                                 normalize)
-import qualified Dhall.Core                            as Expr (Expr (..))
+import qualified Dhall.Core                            as Dhall
 import qualified Dhall.Import                          as Dhall
-import qualified Dhall.Map                             as Map
 import qualified Dhall.Parser                          as Dhall
 import qualified Dhall.Pretty
 import qualified Dhall.TypeCheck                       as Dhall
@@ -47,6 +37,8 @@ import qualified Data.Text.IO                          as Text
 import qualified Control.Monad.Trans.State.Strict      as State
 
 
+server, port :: String
+chan, nick :: Text
 server = "irc.freenode.org"
 port   = "6667"
 chan   = "#dhall-test"
