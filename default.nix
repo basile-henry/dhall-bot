@@ -2,11 +2,12 @@
 
 with nixpkgs.pkgs.haskell;
 
-let dhall-haskell = import (builtins.fetchGit {
+let dhall-haskell = import (nixpkgs.fetchgit {
         name = "dhall-haskell";
         url = https://github.com/dhall-lang/dhall-haskell/;
-        rev = "2d2c897e3f43a9b1188ae82e7a1da5b5218fb135";
-        ref = "master";
+        rev = "3fbd0d72f85340ddcaa1c5b1ec41da768466df35";
+        sha256 = "1vk3cp1dkg6zaw202nxiar3hjx237lhm68r6cpvfpl7jmvgm9b6j";
+        fetchSubmodules = true;
     });
 in
 
