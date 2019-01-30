@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ViewPatterns        #-}
 
 module Main where
 
@@ -38,14 +39,21 @@ import qualified Control.Monad.Trans.State.Strict      as State
 
 
 server, port :: String
-chan, nick :: Text
 server = "irc.freenode.org"
 port   = "6667"
-chan   = "#dhall-test"
-nick   = "dhall-bot"
+
+channel, nick :: Text
+channel = "#dhall-test"
+nick    = "dhall-bot-test"
 
 -- The 'Net' monad, a wrapper over IO, carrying the bot's immutable state.
 type Net = ReaderT Socket IO
+
+data Msg =
+  Msg
+    { chan    :: Text
+    , content :: Text
+    }
 
 -- Set up actions to run on start and end, and run the main loop
 main :: IO ()
@@ -55,9 +63,9 @@ main = Network.connect server port $ runReaderT run . fst
 -- Join a channel, and start processing commands
 run :: Net ()
 run = do
-  write "NICK" nick
-  write "USER" (nick <> " 0 * :Dhall bot")
-  write "JOIN" chan
+  write $ "NICK " <> nick
+  write $ "USER " <> nick <> " 0 * :Dhall bot"
+  write $ "JOIN " <> channel
   listen
 
 -- Process each line from the server
@@ -68,55 +76,71 @@ listen = do
     mRawLine <- liftIO (Network.recv socket 512) -- IRC lines limited to 512 bytes
     case mRawLine of
       Just rawLine -> do
-        let ircLine =  Text.decodeUtf8 rawLine
-            command:params = Text.splitOn " :" ircLine
-            param = Text.concat params
+        let ircLine = Text.decodeUtf8 rawLine
 
-        if "PING" == command
-          then write "PONG" $ ":" <> param
-          else do
-            liftIO $ Text.putStr ircLine
-            evalIrc param
+        -- For the logs
+        liftIO $ Text.putStr ircLine
+
+        case Text.words ircLine of
+          -- Respond to ping messages to stay connected
+          "PING":rest -> write $ Text.unwords ("PONG" : rest)
+
+          -- Send the message either to the channel or as a private message
+          who:"PRIVMSG":c:(Text.drop 1 . Text.unwords -> msgContent)
+            -- Channel message
+            | c == channel -> evalIrc . Msg c $ msgContent
+
+            -- Private message
+            | c == nick
+            , (w:_) <- Text.splitOn "!" $ Text.drop 1 who
+            -> evalIrc . Msg w $ msgContent
+
+          _                    -> pure ()
       Nothing -> pure ()
 
 -- Dispatch a command
 evalIrc
   :: ( MonadIO m, MonadReader Socket m )
-  => Text -> m ()
-evalIrc x
+  => Msg -> m ()
+evalIrc (Msg c x)
   -- eval dhall
   | ">" `Text.isPrefixOf` x
-  = privmsg =<< eval False (Text.drop 1 x)
+  = evalDhall False (Text.drop 1 x)
 
   -- type dhall
   |  ":type " `Text.isPrefixOf` x
-  = privmsg =<< eval True (Text.drop 6 x)
+  = evalDhall True (Text.drop 6 x)
   | ":t " `Text.isPrefixOf` x
-  = privmsg =<< eval True (Text.drop 3 x)
+  = evalDhall True (Text.drop 3 x)
 
   -- help
   |  ":help" `Text.isPrefixOf` x
   || ":h" `Text.isPrefixOf` x
-  = privmsg "I understand the following commands: about help type >"
+  = msg "I understand the following commands: about help type >"
 
   -- help
   | ":about" `Text.isPrefixOf` x
-  = privmsg "The source for the dhall-bot project is available at https://github.com/basile-henry/dhall-bot"
+  = msg "The source for the dhall-bot project is available at https://github.com/basile-henry/dhall-bot"
+  where
+    msg = privmsg . Msg c
+
+    evalDhall t y = msg =<< eval t y
 
 evalIrc _ = pure () -- ignore everything else
 
 -- Send a privmsg to the current chan + server
 privmsg
   :: ( MonadIO m, MonadReader Socket m )
-  => Text -> m ()
-privmsg msg = mapM_ (\m -> write "PRIVMSG" (chan <> " :" <> m)) $ Text.lines msg
+  => Msg -> m ()
+privmsg msg =
+  mapM_ (\m -> write $ "PRIVMSG " <> chan msg <> " :" <> m) . Text.lines $ content msg
 
 -- Send a message out to the server we're currently connected to
 write
   :: ( MonadIO m, MonadReader Socket m )
-  => Text -> Text -> m ()
-write command params = do
-  let ircLine = command <> " " <> params <> "\r\n"
+  => Text -> m ()
+write command = do
+  let ircLine = command <> "\r\n"
   socket <- ask
   liftIO $ do
     Network.send socket (Text.encodeUtf8 ircLine)
