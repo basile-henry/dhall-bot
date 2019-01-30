@@ -133,7 +133,11 @@ privmsg
   :: ( MonadIO m, MonadReader Socket m )
   => Msg -> m ()
 privmsg msg =
-  mapM_ (\m -> write $ "PRIVMSG " <> chan msg <> " :" <> m) . Text.lines $ content msg
+  let ls = Text.lines $ content msg
+      limitedLines
+        | length ls > 5 = take 4 ls ++ [ "..." ]
+        | otherwise     = ls
+  in  mapM_ (\m -> write $ "PRIVMSG " <> chan msg <> " :" <> m) limitedLines
 
 -- Send a message out to the server we're currently connected to
 write
