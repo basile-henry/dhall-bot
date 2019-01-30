@@ -1,12 +1,12 @@
-{ nixpkgs ? import ./nixpkgs.nix }:
+{ nixpkgs ? import ./nixpkgs.nix {} }:
 
 with nixpkgs.pkgs.haskell;
 
 let dhall-src = nixpkgs.fetchgit {
         name = "dhall-haskell";
         url = https://github.com/dhall-lang/dhall-haskell/;
-        rev = "3fbd0d72f85340ddcaa1c5b1ec41da768466df35";
-        sha256 = "1vk3cp1dkg6zaw202nxiar3hjx237lhm68r6cpvfpl7jmvgm9b6j";
+        rev = "bc4fc87043d4a0868f95b726b160806e340222ed";
+        sha256 = "1c7mrphmkc63683q3s9728klchr7qiwd37v1ki0vh1n6a60fp8wn";
         fetchSubmodules = true;
     } + /dhall;
 
