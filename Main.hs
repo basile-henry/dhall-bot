@@ -78,9 +78,6 @@ listen = do
       Just rawLine -> do
         let ircLine = Text.decodeUtf8 rawLine
 
-        -- For the logs
-        liftIO $ Text.putStr ircLine
-
         case Text.words ircLine of
           -- Respond to ping messages to stay connected
           "PING":rest -> write $ Text.unwords ("PONG" : rest)
@@ -88,12 +85,22 @@ listen = do
           -- Send the message either to the channel or as a private message
           who:"PRIVMSG":c:(Text.drop 1 . Text.unwords -> msgContent)
             -- Channel message
-            | c == channel -> evalIrc . Msg c $ msgContent
+            | c == channel
+            -> do
+            -- For the logs
+            liftIO $ Text.putStr ircLine
+
+            evalIrc . Msg c $ msgContent
 
             -- Private message
             | c == nick
             , (w:_) <- Text.splitOn "!" $ Text.drop 1 who
-            -> evalIrc . Msg w $ msgContent
+            -> do
+            -- For the logs
+            liftIO $ Text.putStr ircLine
+
+            evalIrc . Msg w $ msgContent
+
 
           _                    -> pure ()
       Nothing -> pure ()
@@ -148,7 +155,9 @@ write command = do
   socket <- ask
   liftIO $ do
     Network.send socket (Text.encodeUtf8 ircLine)
-    Text.putStr ircLine
+
+    unless ("PONG :" `Text.isPrefixOf` ircLine) $
+      Text.putStr ircLine
 
 -----------
 -- Dhall
