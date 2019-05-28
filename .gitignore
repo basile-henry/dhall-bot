@@ -1,3 +1,5 @@
 dist-newstyle
 dist
 .ghc.env*
+.stack-work/
+result

@@ -1,10 +1,25 @@
 # dhall-bot
 
-To build and run (using `nix`):
+## Building and running
 
-```sh
-$(nix-build --no-out-link)/bin/dhall-bot
-```
+- Using `nix`:
+
+  ```sh
+  $(nix-build --no-out-link)/bin/dhall-bot
+  ```
+- Using `stack`:
+
+  Install `zlib`, on `Ubuntu`:
+
+  ```sh
+  sudo apt update
+  sudo apt install libghc-zlib-dev
+  ```
+
+  ```sh
+  stack build
+  stack run
+  ```
 
 ## Note
 
